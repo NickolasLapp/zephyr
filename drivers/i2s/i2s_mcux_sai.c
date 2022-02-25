@@ -93,23 +93,30 @@ struct i2s_dev_data {
 
 static void i2s_dma_tx_callback(const struct device *, void *,
 				uint32_t, int);
-static void i2s_tx_stream_disable(const struct device *);
-static void i2s_rx_stream_disable(const struct device *);
+static void i2s_tx_stream_disable(const struct device *, bool drop);
+static void i2s_rx_stream_disable(const struct device *,
+				  bool in_drop, bool out_drop);
 
 static inline void i2s_purge_stream_buffers(struct stream *strm,
-					    struct k_mem_slab *mem_slab)
+					    struct k_mem_slab *mem_slab,
+					    bool in_drop, bool out_drop)
 {
 	void *buffer;
 
-	while (k_msgq_get(&strm->in_queue, &buffer, K_NO_WAIT) == 0) {
-		k_mem_slab_free(mem_slab, &buffer);
+	if (in_drop) {
+		while (k_msgq_get(&strm->in_queue, &buffer, K_NO_WAIT) == 0) {
+			k_mem_slab_free(mem_slab, &buffer);
+		}
 	}
-	while (k_msgq_get(&strm->out_queue, &buffer, K_NO_WAIT) == 0) {
-		k_mem_slab_free(mem_slab, &buffer);
+
+	if (out_drop) {
+		while (k_msgq_get(&strm->out_queue, &buffer, K_NO_WAIT) == 0) {
+			k_mem_slab_free(mem_slab, &buffer);
+		}
 	}
 }
 
-static void i2s_tx_stream_disable(const struct device *dev)
+static void i2s_tx_stream_disable(const struct device *dev, bool drop)
 {
 	struct i2s_dev_data *dev_data = dev->data;
 	struct stream *strm = &dev_data->tx;
@@ -123,7 +130,10 @@ static void i2s_tx_stream_disable(const struct device *dev)
 	dev_cfg->base->TCR3 &= ~I2S_TCR3_TCE_MASK;
 
 	/* purge buffers queued in the stream */
-	i2s_purge_stream_buffers(strm, dev_data->tx.cfg.mem_slab);
+	if (drop) {
+		i2s_purge_stream_buffers(strm, dev_data->tx.cfg.mem_slab,
+					 true, true);
+	}
 
 	/* Disable DMA enable bit */
 	SAI_TxEnableDMA(dev_cfg->base, kSAI_FIFORequestDMAEnable,
@@ -142,7 +152,8 @@ static void i2s_tx_stream_disable(const struct device *dev)
 	}
 }
 
-static void i2s_rx_stream_disable(const struct device *dev)
+static void i2s_rx_stream_disable(const struct device *dev,
+				  bool in_drop, bool out_drop)
 {
 	struct i2s_dev_data *dev_data = dev->data;
 	struct stream *strm = &dev_data->rx;
@@ -163,7 +174,10 @@ static void i2s_rx_stream_disable(const struct device *dev)
 	SAI_RxEnable(dev_cfg->base, false);
 
 	/* purge buffers queued in the stream */
-	i2s_purge_stream_buffers(strm, dev_data->rx.cfg.mem_slab);
+	if (in_drop || out_drop) {
+		i2s_purge_stream_buffers(strm, dev_data->rx.cfg.mem_slab,
+					 in_drop, out_drop);
+	}
 
 	strm->stream_starving = false;
 
@@ -204,7 +218,7 @@ static void i2s_dma_tx_callback(const struct device *dma_dev,
 		/* get the next buffer from queue */
 		if (strm->in_queue.used_msgs == 0) {
 			LOG_DBG("tx no more in queue data");
-			i2s_tx_stream_disable(dev);
+			i2s_tx_stream_disable(dev, false);
 			/* stream is starving */
 			strm->stream_starving = true;
 			return;
@@ -237,13 +251,13 @@ static void i2s_dma_tx_callback(const struct device *dma_dev,
 			LOG_ERR("DMA status %08x chan %u get ret %d",
 				status, channel, ret);
 			strm->state = I2S_STATE_READY;
-			i2s_tx_stream_disable(dev);
+			i2s_tx_stream_disable(dev, false);
 		}
 
 		break;
 
 	case I2S_STATE_STOPPING:
-		i2s_tx_stream_disable(dev);
+		i2s_tx_stream_disable(dev, true);
 		strm->state = I2S_STATE_READY;
 		break;
 	}
@@ -284,7 +298,7 @@ static void i2s_dma_rx_callback(const struct device *dma_dev,
 			if (ret != 0) {
 				LOG_ERR("buffer alloc from slab %p err %d",
 					strm->cfg.mem_slab, ret);
-				i2s_rx_stream_disable(dev);
+				i2s_rx_stream_disable(dev, false, false);
 				strm->state = I2S_STATE_ERROR;
 			} else {
 				uint32_t data_path = strm->start_channel;
@@ -318,7 +332,7 @@ static void i2s_dma_rx_callback(const struct device *dma_dev,
 		}
 		break;
 	case I2S_STATE_ERROR:
-		i2s_rx_stream_disable(dev);
+		i2s_rx_stream_disable(dev, true, true);
 		break;
 	}
 }
@@ -779,9 +793,9 @@ static int i2s_mcux_trigger(const struct device *dev, enum i2s_dir dir,
 			break;
 		}
 		if (dir == I2S_DIR_TX) {
-			i2s_tx_stream_disable(dev);
+			i2s_tx_stream_disable(dev, true);
 		} else {
-			i2s_rx_stream_disable(dev);
+			i2s_rx_stream_disable(dev, true, true);
 		}
 		strm->state = I2S_STATE_READY;
 		break;
@@ -810,9 +824,9 @@ static int i2s_mcux_trigger(const struct device *dev, enum i2s_dir dir,
 		}
 		strm->state = I2S_STATE_READY;
 		if (dir == I2S_DIR_TX) {
-			i2s_tx_stream_disable(dev);
+			i2s_tx_stream_disable(dev, true);
 		} else {
-			i2s_rx_stream_disable(dev);
+			i2s_rx_stream_disable(dev, true, true);
 		}
 		break;
 
@@ -849,7 +863,7 @@ static int i2s_mcux_read(const struct device *dev, void **mem_block,
 
 	switch (strm->state) {
 	case I2S_STATE_STOPPING:
-		i2s_rx_stream_disable(dev);
+		i2s_rx_stream_disable(dev, true, false);
 		strm->state = I2S_STATE_READY;
 		break;
 	case I2S_STATE_RUNNING:
