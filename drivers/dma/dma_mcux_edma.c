@@ -33,23 +33,23 @@ struct dma_mcux_edma_config {
 	void (*irq_config_func)(const struct device *dev);
 };
 
-#ifdef CONFIG_DMA_MCUX_USE_DTCM_FOR_DMA_BUFFER
+#ifdef CONFIG_DMA_MCUX_USE_DTCM_FOR_DMA_DESCRIPTORS
 
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
-static __aligned(32) __dtcm_noinit_section edma_tcd_t
-tcdpool[DT_INST_PROP(0, dma_channels)][CONFIG_DMA_TCD_QUEUE_SIZE];
+#define EDMA_TCDPOOL_CACHE_ATTR __dtcm_noinit_section
 #else /* DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay) */
 #error Selected DTCM for MCUX DMA buffer but no DTCM section.
 #endif /* DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay) */
 
 #elif defined(CONFIG_NOCACHE_MEMORY)
-static __aligned(32) __nocache edma_tcd_t
-tcdpool[DT_INST_PROP(0, dma_channels)][CONFIG_DMA_TCD_QUEUE_SIZE];
+#define EDMA_TCDPOOL_CACHE_ATTR __nocache
 #else
-#warning tcdpool may be located in cacheable memory which can cause EDMA issues
-static __aligned(32) edma_tcd_t
+#error tcdpool could not be located in cacheable memory, which is required for proper EDMA operation.
+#endif /* CONFIG_DMA_MCUX_USE_DTCM_FOR_DMA_DESCRIPTORS */
+
+
+static __aligned(32) EDMA_TCDPOOL_CACHE_ATTR edma_tcd_t
 tcdpool[DT_INST_PROP(0, dma_channels)][CONFIG_DMA_TCD_QUEUE_SIZE];
-#endif /* CONFIG_DMA_MCUX_USE_DTCM_FOR_DMA_BUFFER */
 
 struct dma_mcux_channel_transfer_edma_settings {
 	uint32_t source_data_size;
@@ -58,6 +58,8 @@ struct dma_mcux_channel_transfer_edma_settings {
 	uint32_t dest_burst_length;
 	enum dma_channel_direction direction;
 	edma_transfer_type_t transfer_type;
+	struct k_work_delayable reload_work;
+	bool reload_scheduled;
 	bool valid;
 };
 
@@ -164,19 +166,15 @@ static void channel_irq(edma_handle_t *handle)
 		handle->header = (int8_t)new_header;
 		handle->tcdUsed -= (int8_t)tcds_done;
 
-		/* Clear the done flag before the callback so a user can optionally
-		 * install (reload) the next handle during the callback if desired
-		 */
-		if (transfer_done) {
-			handle->base->CDNE = handle->channel;
-		}
-
 		/* Invoke callback function. */
 		if (handle->callback != NULL) {
 			(handle->callback)(handle, handle->userData,
 					   transfer_done, tcds_done);
 		}
 
+		if (transfer_done) {
+			handle->base->CDNE = handle->channel;
+		}
 	}
 }
 
@@ -248,28 +246,24 @@ static int dma_mcux_edma_configure(const struct device *dev, uint32_t channel,
 	}
 
 	data->transfer_settings.valid = false;
+	data->transfer_settings.reload_scheduled = false;
 
 	switch (config->channel_direction) {
-	case MEMORY_TO_MEMORY: {
+	case MEMORY_TO_MEMORY:
 		transfer_type = kEDMA_MemoryToMemory;
 		break;
-	}
-	case MEMORY_TO_PERIPHERAL: {
+	case MEMORY_TO_PERIPHERAL:
 		transfer_type = kEDMA_MemoryToPeripheral;
 		break;
-	}
-	case PERIPHERAL_TO_MEMORY: {
+	case PERIPHERAL_TO_MEMORY:
 		transfer_type = kEDMA_PeripheralToMemory;
 		break;
-	}
-	case PERIPHERAL_TO_PERIPHERAL: {
+	case PERIPHERAL_TO_PERIPHERAL:
 		transfer_type = kEDMA_PeripheralToPeripheral;
 		break;
-	}
-	default: {
+	default:
 		LOG_ERR("not support transfer direction");
 		return -EINVAL;
-	}
 	}
 
 	if (!data_size_valid(config->source_data_size)) {
@@ -409,6 +403,8 @@ static int dma_mcux_edma_stop(const struct device *dev, uint32_t channel)
 	struct dma_mcux_edma_data *data = DEV_DATA(dev);
 
 	data->data_cb[channel].transfer_settings.valid = false;
+	(void)k_work_cancel_delayable(&data->data_cb[channel].transfer_settings.reload_work);
+	data->data_cb[channel].transfer_settings.reload_scheduled = false;
 
 	if (!data->data_cb[channel].busy) {
 		return 0;
@@ -462,7 +458,14 @@ static int dma_mcux_edma_reload(const struct device *dev, uint32_t channel,
 
 	/* If the tcdPool is not in use (no s/g) then only a single TCD can be active at once. */
 	if (data->busy && data->edma_handle.tcdPool == NULL) {
-		LOG_ERR("EDMA busy. Wait for transfer completes before reload.");
+		LOG_ERR("EDMA busy. Wait until the transfer completes before reloading.");
+		ret = -EBUSY;
+		goto cleanup;
+	}
+
+	/* If a reload is already scheduled, we cannot schedule another one. */
+	if (data->transfer_settings.reload_scheduled) {
+		LOG_ERR("DMA reload already scheduled. Wait until the reload completes before reloading.");
 		ret = -EBUSY;
 		goto cleanup;
 	}
@@ -476,14 +479,20 @@ static int dma_mcux_edma_reload(const struct device *dev, uint32_t channel,
 		data->transfer_settings.source_burst_length,
 		size,
 		data->transfer_settings.transfer_type);
-	const status_t submit_status =
-		EDMA_SubmitTransfer(DEV_EDMA_HANDLE(dev, channel), &(data->transferConfig));
 
-
-	if (submit_status != kStatus_Success) {
-		LOG_ERR("Error submitting EDMA Transfer: 0x%x", submit_status);
-		ret = -EFAULT;
+	if (k_is_in_isr()) {
+		/* It is not valid to reload the DMA module from within an ISR. Schedule the DMA reload to occur ASAP */
+		data->transfer_settings.reload_scheduled = true;
+		k_work_reschedule(&data->transfer_settings.reload_work, K_MSEC(1));
+	} else {
+		const status_t submit_status =
+			EDMA_SubmitTransfer(DEV_EDMA_HANDLE(dev, channel), &(data->transferConfig));
+		if (submit_status != kStatus_Success) {
+			LOG_ERR("Error submitting EDMA Transfer: 0x%x", submit_status);
+			ret = -EFAULT;
+		}
 	}
+
 cleanup:
 	irq_unlock(key);
 	return ret;
@@ -539,6 +548,25 @@ static const struct dma_driver_api dma_mcux_edma_api = {
 	.chan_filter = dma_mcux_edma_channel_filter,
 };
 
+static void dma_mcux_edma_reload_work_callback(struct k_work *work)
+{
+	struct dma_mcux_channel_transfer_edma_settings *transfer_settings = CONTAINER_OF(work,
+											 struct dma_mcux_channel_transfer_edma_settings,
+											 reload_work);
+	struct call_back *callback = CONTAINER_OF(transfer_settings,
+						  struct call_back,
+						  transfer_settings);
+
+	LOG_DBG("EDMA Reload From Work Thread");
+	const status_t submit_status =
+		EDMA_SubmitTransfer(&callback->edma_handle, &(callback->transferConfig));
+
+	if (submit_status != kStatus_Success) {
+		LOG_ERR("Unable to submit DMA reload from work queue thread!");
+	}
+	transfer_settings->reload_scheduled = false;
+}
+
 static int dma_mcux_edma_init(const struct device *dev)
 {
 	const struct dma_mcux_edma_config *config = dev->config;
@@ -557,6 +585,11 @@ static int dma_mcux_edma_init(const struct device *dev)
 	data->dma_ctx.magic = DMA_MAGIC;
 	data->dma_ctx.dma_channels = config->dma_channels;
 	data->dma_ctx.atomic = data->channels_atomic;
+
+	for (size_t i = 0U; i < ARRAY_SIZE(data->data_cb); i++) {
+		k_work_init_delayable(&data->data_cb[i].transfer_settings.reload_work,
+				      dma_mcux_edma_reload_work_callback);
+	}
 	return 0;
 }
 
