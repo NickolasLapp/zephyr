@@ -18,11 +18,6 @@
 #include <drivers/dma.h>
 #endif
 
-#if defined(CONFIG_UART_ASYNC_API) && defined(CONFIG_HAS_MCUX_CACHE)
-#include <cache.h>
-#include <fsl_cache.h>
-#include <linker/linker-defs.h>
-#endif
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(uart_mcux_lpuart, LOG_LEVEL_ERR);
@@ -314,31 +309,6 @@ static void mcux_lpuart_async_isr(const struct device *dev)
 	}
 }
 
-#if defined(CONFIG_HAS_MCUX_CACHE)
-static size_t round_up_cache_line_size(size_t original_len)
-{
-	const size_t cache_line_size = sys_cache_data_line_size_get();
-
-	return (original_len + cache_line_size - 1U) & -cache_line_size;
-}
-
-static bool buffer_in_noncacheable_region(const uint8_t *buf, const size_t buf_len)
-{
-	const char *buf_ptr = (const char *)buf;
-	bool in_nocache_region = false;
-
-#if defined(CONFIG_NOCACHE_MEMORY)
-	in_nocache_region |= (buf_ptr >= _nocache_ram_start) &&
-			     (buf_ptr + buf_len <= _nocache_ram_end);
-#endif /* CONFIG_NOCACHE_MEMORY */
-#if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
-	in_nocache_region |= (buf_ptr >= __dtcm_start) &&
-			     (buf_ptr + buf_len <= __dtcm_end);
-#endif  /* DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay) */
-	return in_nocache_region;
-}
-#endif /* CONFIG_HAS_MCUX_CACHE */
-
 static void async_user_callback(const struct device *dev, struct uart_event *evt)
 {
 	const struct mcux_lpuart_data *data = dev->data;
@@ -388,19 +358,6 @@ static void async_evt_rx_rdy(const struct device *dev)
 
 	/* Only send event for new data */
 	if (event.data.rx.len > 0) {
-
-#ifdef CONFIG_HAS_MCUX_CACHE
-		/* Safe to invalidate the cache for the buffer because it is currently owned by us
-		 * and it is invalid for the CPU to write to it until it is released. DCACHE
-		 * operations must operate on an entire cache line at once, so round up to
-		 * the nearest multiple of the cache line size.
-		 */
-		if (!buffer_in_noncacheable_region(dma_params->buf, dma_params->buf_len)) {
-			DCACHE_InvalidateByRange((uint32_t)dma_params->buf,
-						 round_up_cache_line_size(dma_params->buf_len));
-		}
-#endif
-
 		async_user_callback(dev, &event);
 	}
 }
@@ -670,11 +627,7 @@ static int mcux_lpuart_tx(const struct device *dev, const uint8_t *buf, size_t l
 
 	if (ret == 0) {
 		LOG_DBG("Starting UART DMA TX Ch %u", data->async.tx_dma_params.dma_channel);
-#ifdef CONFIG_HAS_MCUX_CACHE
-		if (!buffer_in_noncacheable_region(buf, len)) {
-			DCACHE_CleanByRange((uint32_t)buf, round_up_cache_line_size(len));
-		}
-#endif
+
 		ret = dma_start(config->tx_dma_config.dma_dev,
 				data->async.tx_dma_params.dma_channel);
 		LPUART_EnableTxDMA(lpuart, true);

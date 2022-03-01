@@ -18,6 +18,12 @@
 #include <drivers/dma.h>
 #include <drivers/clock_control.h>
 
+#ifdef (CONFIG_HAS_MCUX_CACHE)
+#include <cache.h>
+#include <fsl_cache.h>
+#include <linker/linker-defs.h>
+#endif
+
 #include "dma_mcux_edma.h"
 
 #include <logging/log.h>
@@ -94,6 +100,46 @@ struct dma_mcux_edma_data {
 #define DEV_EDMA_HANDLE(dev, ch) \
 	((edma_handle_t *)(&(DEV_CHANNEL_DATA(dev, ch)->edma_handle)))
 
+#if defined(CONFIG_HAS_MCUX_CACHE)
+static size_t round_up_cache_line_size(size_t original_len)
+{
+	const size_t cache_line_size = sys_cache_data_line_size_get();
+
+	return (original_len + cache_line_size - 1U) & -cache_line_size;
+}
+
+static bool buffer_in_noncacheable_region(const uint8_t *buf, const size_t buf_len)
+{
+	const char *buf_ptr = (const char *)buf;
+	bool in_nocache_region = false;
+
+#if defined(CONFIG_NOCACHE_MEMORY)
+	in_nocache_region |= (buf_ptr >= _nocache_ram_start) &&
+			     (buf_ptr + buf_len <= _nocache_ram_end);
+#endif /* CONFIG_NOCACHE */
+#if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
+	in_nocache_region |= (buf_ptr >= __dtcm_start) &&
+			     (buf_ptr + buf_len <= __dtcm_end);
+#endif  /* DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay) */
+	return in_nocache_region;
+}
+#endif /* CONFIG_HAS_MCU_CACHE */
+
+
+static inline void clean_cache_if_required(const edma_transfer_config_t *transfer_config, const edma_transfer_type_t transfer_type)
+{
+	assert(transfer_config != NULL);
+#ifdef (CONFIG_HAS_MCUX_CACHE)
+	const uint8_t *transfer_src = (const uint8_t *)transfer_config->srcAddr;
+	const size_t transfer_len = transfer_config->majorLoopCounts * transfer_config->minorLoopBytes;
+	if ((transfer_type == kEDMA_MemoryToMemory) || (transfer_type == kEDMA_MemoryToPeripheral) &&
+	    !buffer_in_noncacheable_region(transfer_src, transfer_len)) {
+		DCACHE_CleanByRange((uint32_t)block_config->source_address, round_up_cache_line_size(block_config->block_size));
+	}
+#endif /* CONFIG_HAS_MCU_CACHE */
+}
+
+
 static bool data_size_valid(const size_t data_size)
 {
 	return (data_size == 4U || data_size == 2U ||
@@ -117,6 +163,19 @@ static void nxp_edma_callback(edma_handle_t *handle, void *param, bool transferD
 	LOG_DBG("transfer %d", tcds);
 	data->dma_callback(data->dev, data->user_data, channel, ret);
 }
+
+
+#ifdef CONFIG_HAS_MCUX_CACHE
+/* Safe to invalidate the cache for the buffer because it is currently owned by us
+ * and it is invalid for the CPU to write to it until it is released. DCACHE
+ * operations must operate on an entire cache line at once, so round up to
+ * the nearest multiple of the cache line size.
+ */
+// if (!buffer_in_noncacheable_region(dma_params->buf, dma_params->buf_len)) {
+//	DCACHE_InvalidateByRange((uint32_t)dma_params->buf,
+//				 round_up_cache_line_size(dma_params->buf_len));
+// }
+#endif
 
 static void channel_irq(edma_handle_t *handle)
 {
@@ -295,6 +354,7 @@ static int dma_mcux_edma_configure(const struct device *dev, uint32_t channel,
 	/* Lock and page in the channel configuration */
 	key = irq_lock();
 
+
 #if DT_INST_PROP(0, nxp_a_on)
 	if (config->source_handshake || config->dest_handshake ||
 	    transfer_type == kEDMA_MemoryToMemory) {
@@ -333,6 +393,7 @@ static int dma_mcux_edma_configure(const struct device *dev, uint32_t channel,
 				config->source_burst_length,
 				block_config->block_size, transfer_type);
 
+			clean_cache_if_required(&data->transfer_config, transfer_type);
 			const status_t submit_status =
 				EDMA_SubmitTransfer(p_handle, &(data->transferConfig));
 			if (submit_status != kStatus_Success) {
@@ -352,6 +413,7 @@ static int dma_mcux_edma_configure(const struct device *dev, uint32_t channel,
 				     config->source_burst_length,
 				     block_config->block_size, transfer_type);
 
+		clean_cache_if_required(&data->transfer_config, transfer_type);
 		const status_t submit_status =
 			EDMA_SubmitTransfer(p_handle, &(data->transferConfig));
 		if (submit_status != kStatus_Success) {
@@ -394,6 +456,7 @@ static int dma_mcux_edma_start(const struct device *dev, uint32_t channel)
 	LOG_DBG("DMAMUX CHCFG 0x%x", DEV_DMAMUX_BASE(dev)->CHCFG[channel]);
 	LOG_DBG("DMA CR 0x%x", DEV_BASE(dev)->CR);
 	data->busy = true;
+
 	EDMA_StartTransfer(DEV_EDMA_HANDLE(dev, channel));
 	return 0;
 }
@@ -479,6 +542,8 @@ static int dma_mcux_edma_reload(const struct device *dev, uint32_t channel,
 		data->transfer_settings.source_burst_length,
 		size,
 		data->transfer_settings.transfer_type);
+	clean_cache_if_required(&data->transfer_config,
+				data->transfer_settings.transfer_type);
 
 	if (k_is_in_isr()) {
 		/* It is not valid to reload the DMA module from within an ISR. Schedule the DMA reload to occur ASAP */
