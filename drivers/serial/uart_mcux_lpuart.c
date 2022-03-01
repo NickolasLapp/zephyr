@@ -330,14 +330,14 @@ static bool buffer_in_noncacheable_region(const uint8_t *buf, const size_t buf_l
 #if defined(CONFIG_NOCACHE_MEMORY)
 	in_nocache_region |= (buf_ptr >= _nocache_ram_start) &&
 			     (buf_ptr + buf_len <= _nocache_ram_end);
-#endif /* CONFIG_NOCACHE */
+#endif /* CONFIG_NOCACHE_MEMORY */
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 	in_nocache_region |= (buf_ptr >= __dtcm_start) &&
 			     (buf_ptr + buf_len <= __dtcm_end);
 #endif  /* DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay) */
 	return in_nocache_region;
 }
-#endif /* CONFIG_HAS_MCU_CACHE */
+#endif /* CONFIG_HAS_MCUX_CACHE */
 
 static void async_user_callback(const struct device *dev, struct uart_event *evt)
 {
