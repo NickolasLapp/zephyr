@@ -214,7 +214,7 @@ static int i2s_tx_reload_multiple_dma_blocks(const struct device *dev,
 	I2S_Type *base = (I2S_Type *)dev_cfg->base;
 	struct stream *strm = &dev_data->tx;
 	void *buffer = NULL;
-	int ret;
+	int ret = 0;
 	unsigned int key;
 
 	*blocks_queued = 0;
@@ -429,8 +429,7 @@ static void enable_mclk_direction(const struct device *dev, bool dir)
 	const struct i2s_mcux_config *dev_cfg = dev->config;
 	uint32_t offset = dev_cfg->mclk_pin_offset;
 	uint32_t mask = dev_cfg->mclk_pin_mask;
-	uint32_t *gpr = (uint32_t *)DT_REG_ADDR(DT_NODELABEL(iomuxcgpr))
-				+ offset;
+	uint32_t *gpr = (uint32_t *)(DT_REG_ADDR(DT_NODELABEL(iomuxcgpr)) + offset);
 
 	if (dir) {
 		*gpr |= mask;
@@ -529,8 +528,9 @@ static int i2s_mcux_config(const struct device *dev, enum i2s_dir dir,
 
 	memset(&config, 0, sizeof(config));
 
-	enable_mclk_direction(dev,
-			      i2s_cfg->options | I2S_OPT_BIT_CLK_MASTER);
+        const bool is_mclk_slave = i2s_cfg->options & I2S_OPT_BIT_CLK_SLAVE;
+	enable_mclk_direction(dev, !is_mclk_slave);
+//	enable_mclk_direction(dev, i2s_cfg->options | I2S_OPT_BIT_CLK_MASTER);
 	get_mclk_rate(dev, &mclk);
 	LOG_DBG("mclk is %d", mclk);
 
@@ -1122,17 +1122,43 @@ static void i2s_mcux_isr(void *arg)
 
 static void audio_clock_settings(const struct device *dev)
 {
+        // IOMUXC_SetSaiMClkClockSource <- Enable the mclk source
 	clock_audio_pll_config_t audioPllConfig;
 	const struct i2s_mcux_config *dev_cfg = dev->config;
 	uint32_t clock_name = (uint32_t) dev_cfg->clk_sub_sys;
 
 	/*Clock setting for SAI*/
+        // Sets SAI1 Clk mux, pre and post div
+        // clk_src == 0x2 => Audio PLL
+        // pre_div = 0 => Divide by 1  -> Seems possibly wrong, since the input = 786.43MHz (outside of 300Mhz range spec by RM)
+        // * The input clock to this divider should be lower than 300Mhz, the predivider can be used to achieve this.
+        // >>> CCM_CS1CDR, SAI1_CLK_PRED
+        // podf = 0x3f (63) => Divide by 64  (2^6)
+        // >>> CCM_CS1CDR, SAI1_CLK_PODF
+        // MUX -> Set CCM_CSCMR1: SAI1_CLK_SEL  -> 0x2 (0b10), derive clock from PLL4 (audio PLL)
+        // PLL output frequency = Fref * (DIV_SELECT + NUM/DENOM)
+        //                        24MHz * ()
 	imxrt_audio_codec_pll_init(clock_name, dev_cfg->clk_src,
 				   dev_cfg->clk_pre_div, dev_cfg->clk_src_div);
 
+
+        // Fref * (DIV_SELECT + NUM/DENOM) = 24MHz * (32 + 77 / 100) = 787.48MHz 
+        // PLL SRC = 0
+        // From DTS: 400D_8000h -> CCM_ANALOG_PLL_AUDIOn
+        // Set bits 0xC000 (mask) -> 0 (val)
+        // Bypass Clk Src == 24MHz ref clock (other option is external oscillator, define CLOCK_N Freq, not populated)
+	audioPllConfig.src = dev_cfg->pll_src;
+        // PLL LP = 0x20 -> 32
+        // Mask = 0x7F = DIV SELECT 
+        // Valid range: 27~54 (from RM)
 	audioPllConfig.loopDivider = dev_cfg->pll_lp;
+        // PLL Post-Divider = 0x1
+        // I think the register offset and mask is maybe off here. I think mask should be 0x180000 instead of 0x18
+        // Ox1 = divide by 1
 	audioPllConfig.postDivider = dev_cfg->pll_pd;
+        // NUM = 0x4d (77)
 	audioPllConfig.numerator = dev_cfg->pll_num;
+        // DEN = 0x0x64 (100)
 	audioPllConfig.denominator = dev_cfg->pll_den;
 
 	CLOCK_InitAudioPll(&audioPllConfig);
