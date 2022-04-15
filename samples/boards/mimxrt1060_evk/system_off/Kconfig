@@ -1,0 +1,3 @@
+mainmenu "MIMXRT1060_EVK SYSTEM_OFF demo"
+
+source "Kconfig.zephyr"
