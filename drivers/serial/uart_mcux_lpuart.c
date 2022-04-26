@@ -953,12 +953,6 @@ static int mcux_lpuart_configure_init(const struct device *dev, const struct uar
 			      mcux_lpuart_async_rx_timeout);
 	k_work_init_delayable(&data->async.tx_dma_params.timeout_work,
 			      mcux_lpuart_async_tx_timeout);
-
-	/* Disable the UART Receiver until the async API provides a buffer to
-	 * to receive into with rx_enable
-	 */
-	uart_config.enableRx = false;
-
 #endif /* CONFIG_UART_ASYNC_API */
 
 	LPUART_Init(config->base, &uart_config, clock_freq);
