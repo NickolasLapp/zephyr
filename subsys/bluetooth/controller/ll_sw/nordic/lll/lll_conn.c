@@ -944,13 +944,15 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 	}
 
 	/* process received data */
-	if ((pdu_data_rx->sn == lll->nesn) &&
+	if ((pdu_data_rx->sn == lll->nesn || pdu_data_rx->ll_id == PDU_DATA_LLID_RESV) &&
 	    /* check so that we will NEVER use the rx buffer reserved for empty
 	     * packet and internal control enqueue
 	     */
 	    (ull_pdu_rx_alloc_peek(3) != 0)) {
 		/* Increment next expected serial number */
-		lll->nesn++;
+		if(pdu_data_rx->ll_id != PDU_DATA_LLID_RESV) {
+			lll->nesn++;
+		}
 
 		if (pdu_data_rx->len != 0) {
 #if defined(CONFIG_BT_CTLR_LE_ENC)
