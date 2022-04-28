@@ -944,6 +944,10 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 	}
 
 	/* process received data */
+	// *** Whisper Change: Added checks for link-layer ID being PDU_DATA_LLID_RESV
+	// *** Apple uses this normally reserved packet type for LEAS audio packets and
+	// *** has re-purposed the NESN field for something different so we don't want
+	// *** to update the NESN field if it's an LEAS packet.
 	if ((pdu_data_rx->sn == lll->nesn || pdu_data_rx->ll_id == PDU_DATA_LLID_RESV) &&
 	    /* check so that we will NEVER use the rx buffer reserved for empty
 	     * packet and internal control enqueue
