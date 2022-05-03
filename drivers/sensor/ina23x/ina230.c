@@ -5,8 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT ti_ina230
-
 #include <logging/log.h>
 #include <drivers/sensor.h>
 #include "ina230.h"
@@ -327,9 +325,9 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) > 0,
 #define INA230_CFG_IRQ(inst)
 #endif /* CONFIG_INA230_TRIGGER */
 
-#define INA230_DRIVER_INIT(inst)				    \
-	static struct ina230_data drv_data_##inst;		    \
-	static const struct ina230_config drv_config_##inst = {	    \
+#define INA2XX_DRIVER_INIT(inst, t)				    \
+	static struct ina230_data drv_data_##t##_##inst;		    \
+	static const struct ina230_config drv_config_##t##_##inst = {	    \
 		.bus = I2C_DT_SPEC_INST_GET(inst),		    \
 		.config = DT_INST_PROP(inst, config),		    \
 		.current_lsb = DT_INST_PROP(inst, current_lsb),	    \
@@ -340,10 +338,23 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) > 0,
 	DEVICE_DT_INST_DEFINE(inst,				    \
 			      &ina230_init,			    \
 			      NULL,				    \
-			      &drv_data_##inst,			    \
-			      &drv_config_##inst,		    \
+			      &drv_data_##t##_##inst,			    \
+			      &drv_config_##t##_##inst,		    \
 			      POST_KERNEL,			    \
 			      CONFIG_SENSOR_INIT_PRIORITY,	    \
 			      &ina230_driver_api);
 
-DT_INST_FOREACH_STATUS_OKAY(INA230_DRIVER_INIT)
+#define INA230_INIT(n) INA23X_DRIVER_INIT(n, 230)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_ina230
+DT_INST_FOREACH_STATUS_OKAY(INA230_INIT)
+
+#define INA231_INIT(n) INA23X_DRIVER_INIT(n, 231)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_ina231
+DT_INST_FOREACH_STATUS_OKAY(INA231_INIT)
+
+#define INA226_INIT(n) INA23X_DRIVER_INIT(n, 226)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_ina226
+DT_INST_FOREACH_STATUS_OKAY(INA226_INIT)

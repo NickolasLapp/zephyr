@@ -11,9 +11,10 @@ config INA23X
 if INA23X
 
 config INA230
-	bool "INA230"
+	bool "INA230. Note: This driver is shared for 226, 230, and 231 part
+	numbers. Enable this config to use any of these parts."
 	help
-	  Enable driver for INA230/INA231.
+	  Enable driver for INA230/INA231/226.
 
 config INA237
 	bool "INA237"
