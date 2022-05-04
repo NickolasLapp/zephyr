@@ -312,9 +312,6 @@ static const struct sensor_driver_api ina230_driver_api = {
 	.channel_get = ina230_channel_get,
 };
 
-BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) > 0,
-	     "No compatible ina230 instances found");
-
 #ifdef CONFIG_INA230_TRIGGER
 #define INA230_CFG_IRQ(inst)				\
 	.trig_enabled = true,				\
@@ -344,17 +341,17 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) > 0,
 			      CONFIG_SENSOR_INIT_PRIORITY,	    \
 			      &ina230_driver_api);
 
-#define INA230_INIT(n) INA23X_DRIVER_INIT(n, 230)
+#define INA230_INIT(n) INA2XX_DRIVER_INIT(n, 230)
 #undef DT_DRV_COMPAT
 #define DT_DRV_COMPAT ti_ina230
 DT_INST_FOREACH_STATUS_OKAY(INA230_INIT)
 
-#define INA231_INIT(n) INA23X_DRIVER_INIT(n, 231)
+#define INA231_INIT(n) INA2XX_DRIVER_INIT(n, 231)
 #undef DT_DRV_COMPAT
 #define DT_DRV_COMPAT ti_ina231
 DT_INST_FOREACH_STATUS_OKAY(INA231_INIT)
 
-#define INA226_INIT(n) INA23X_DRIVER_INIT(n, 226)
+#define INA226_INIT(n) INA2XX_DRIVER_INIT(n, 226)
 #undef DT_DRV_COMPAT
 #define DT_DRV_COMPAT ti_ina226
 DT_INST_FOREACH_STATUS_OKAY(INA226_INIT)
