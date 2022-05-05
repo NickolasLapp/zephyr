@@ -89,6 +89,8 @@ zephyr_library_sources(
   ll_sw/nordic/hal/nrf5/radio/radio.c
   ll_sw/nordic/hal/nrf5/mayfly.c
   ll_sw/nordic/hal/nrf5/ticker.c
+  ll_sw/nordic/hal/nrf5/aes.c
+  ll_sw/nordic/hal/nrf5/ccm_soft.c
   )
 
 zephyr_library_sources_ifdef(
