@@ -34,11 +34,9 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef MESH_AES_H__
-#define MESH_AES_H__
+#ifndef MODE2_AES_H__
+#define MODE2_AES_H__
 
-// #include "nrf_soc.h"
-// #include "nrf_mesh_config_core.h"
 #include <stdint.h>
 
 typedef struct {
@@ -49,15 +47,6 @@ typedef struct {
 
 typedef nrf_ecb_hal_data_t aes_data_t;
 
-#ifndef AES_USE_SOFTDEVICE_ECB_WRAPPER
-#define AES_USE_SOFTDEVICE_ECB_WRAPPER SOFTDEVICE_PRESENT
-#endif
-
-#if AES_USE_SOFTDEVICE_ECB_WRAPPER
-#define aes_encrypt(data) (void)sd_ecb_block_encrypt((nrf_ecb_hal_data_t *)(data))
-#else
 void aes_encrypt(aes_data_t *p_aes_data);
 
-#endif
-
-#endif
+#endif // MODE2_AES_H__

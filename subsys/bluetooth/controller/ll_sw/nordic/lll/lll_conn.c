@@ -37,7 +37,7 @@
 #include "lll_tim_internal.h"
 #include "lll_prof_internal.h"
 
-#include "hal/nrf5/ccm_soft.h"
+#include "hal/nrf5/ccm_mode2_soft.h"
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
 #define LOG_MODULE_NAME bt_ctlr_lll_conn
@@ -987,8 +987,6 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 					static uint8_t decrypted_data[64];
 					uint8_t nonce[CCM_NONCE_LENGTH];
 					ccm_soft_data_t ccm_params;
-					ccm_params.a_len = 0;
-					ccm_params.p_a = NULL;
 					//ccm_params.p_nonce = nonce;
 					ccm_params.p_m = scratch_pkt->lldata;
 					ccm_params.m_len = scratch_pkt->len;
@@ -1016,11 +1014,8 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 					nonce[11] = (uint8_t)lll->ccm_rx.iv[6];
 					nonce[12] = (uint8_t)lll->ccm_rx.iv[7];
 					ccm_params.p_nonce = nonce;
-					ccm_params.mic_len = 0;
-					ccm_params.p_mic = NULL;
 
-					bool mic_passed;
-					ccm_soft_decrypt(&ccm_params, &mic_passed);
+					ccm_mode2_soft_decrypt(&ccm_params);
 
 					if (ctrl_pdu_len_check(
 						scratch_pkt->len)) {

@@ -34,16 +34,11 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "ccm_mode2_soft.h"
+
 #include <string.h>
-// #include <nrf_error.h>
 
-// #include "utils.h"
-// #include "log.h"
 #include "aes.h"
-// #include "toolchain.h"
-
-#include "ccm_soft.h"
-// #include "nrf_mesh_assert.h"
 
 /* How it all works:
  * Generation of the MIC and encryption are two separate procedures.
@@ -93,16 +88,6 @@ typedef struct
     uint16_t counter;
 } a_block_t;
 
-typedef struct
-{
-    uint8_t flags;
-    uint8_t nonce[CCM_NONCE_LENGTH];
-    uint16_t length_field;
-} b0_t;
-
-// NRF_MESH_STATIC_ASSERT(sizeof(a_block_t) == CCM_BLOCK_SIZE);
-// NRF_MESH_STATIC_ASSERT(sizeof(b0_t) == CCM_BLOCK_SIZE);
-
 /**
  * Bytewise XOR for an array.
  *
@@ -122,68 +107,6 @@ static inline void utils_xor(uint8_t * p_dst, const uint8_t * p_src1, const uint
         size--;
         p_dst[size] = p_src1[size] ^ p_src2[size];
     }
-}
-
-static void ccm_soft_authenticate_blocks(aes_data_t * p_aes_data,
-                                         const uint8_t * p_data,
-                                         uint16_t data_size,
-                                         uint8_t offset_B)
-{
-    uint8_t * p_clear = p_aes_data->cleartext;
-    uint8_t * p_cipher = p_aes_data->ciphertext;
-
-    while (data_size != 0)
-    {
-        if (data_size < (CCM_BLOCK_SIZE - offset_B))
-        {
-            memcpy(&p_clear[offset_B], p_data, data_size);
-            memset(&p_clear[offset_B + data_size], 0x00, CCM_BLOCK_SIZE - (offset_B + data_size));
-            data_size = 0;
-        }
-        else
-        {
-            memcpy(&p_clear[offset_B], p_data, (CCM_BLOCK_SIZE - offset_B));
-            data_size -= (CCM_BLOCK_SIZE - offset_B);
-            p_data += (CCM_BLOCK_SIZE - offset_B);
-        }
-
-        offset_B = 0;
-
-        utils_xor(p_clear, p_cipher, p_clear, CCM_BLOCK_SIZE);
-
-        aes_encrypt((nrf_ecb_hal_data_t *) p_aes_data);
-    }
-}
-
-static void ccm_soft_authenticate(ccm_soft_data_t * p_data, aes_data_t * p_aes_data, uint8_t * T)
-{
-    b0_t * p_b0 = (b0_t *) &p_aes_data->cleartext[0];
-
-    /* construct B0 */
-    p_b0->flags = (
-            ((p_data->a_len > 0 ? 1 : 0) << 6)        |
-            ((((p_data->mic_len - 2)/2) & 0x07) << 3) |
-            ((L_LEN - 1) & 0x07));
-
-    memcpy(p_b0->nonce, p_data->p_nonce, CCM_NONCE_LENGTH);
-    p_b0->length_field = LE2BE16(p_data->m_len);
-
-    aes_encrypt((nrf_ecb_hal_data_t *) p_aes_data);
-
-    if (p_data->a_len > 0)
-    {
-        // NRF_MESH_ASSERT(p_data->a_len < 0xFF00); /* Longer a-data requires different (unsupported) encoding */
-        *((uint16_t *) &p_aes_data->cleartext[0]) = LE2BE16(p_data->a_len);
-
-        ccm_soft_authenticate_blocks(p_aes_data, p_data->p_a, p_data->a_len, 2);
-    }
-
-    if (p_data->m_len > 0)
-    {
-        ccm_soft_authenticate_blocks(p_aes_data, p_data->p_m, p_data->m_len, 0);
-    }
-
-    memcpy(T, p_aes_data->ciphertext, p_data->mic_len);
 }
 
 /**
@@ -222,47 +145,20 @@ static inline void build_a_block(const uint8_t * p_nonce, void * A0, uint16_t i)
     p_a_block->counter = LE2BE16(i);
 }
 
-static inline void build_mic(ccm_soft_data_t * p_ccm_data, aes_data_t * p_aes_data, uint8_t * T, uint8_t * p_mic_out)
+void ccm_mode2_soft_encrypt(ccm_soft_data_t * p_data)
 {
-    build_a_block(p_ccm_data->p_nonce, p_aes_data->cleartext, 0);
-
-    /* S0 = AES(A0) */
-    aes_encrypt((nrf_ecb_hal_data_t *) p_aes_data);
-
-    /* MIC = T ^ S0 */
-    utils_xor(p_mic_out, T, p_aes_data->ciphertext, p_ccm_data->mic_len);
-}
-
-void ccm_soft_encrypt(ccm_soft_data_t * p_data)
-{
-#if CCM_DEBUG_MODE_ENABLED
-    __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_encrypt: IN ",  p_data->p_m, p_data->m_len);
-#endif
-
     aes_data_t aes_data;
 
     memcpy(aes_data.key, p_data->p_key, CCM_BLOCK_SIZE);
 
-    ccm_soft_authenticate(p_data, &aes_data, p_data->p_mic);
-
-    build_mic(p_data, &aes_data, p_data->p_mic, p_data->p_mic);
+    build_a_block(p_data->p_nonce, aes_data.cleartext, 0);
 
     /* aes_data.cleartext now contains A0, no need to regenerate it. */
     ccm_soft_crypt(p_data, &aes_data);
-
-#if CCM_DEBUG_MODE_ENABLED
-    __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_encrypt: OUT", p_data->p_out, p_data->m_len);
-    __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_encrypt: MIC", p_data->p_mic, p_data->mic_len);
-#endif
 }
 
-void ccm_soft_decrypt(ccm_soft_data_t * p_data, bool * p_mic_passed)
+void ccm_mode2_soft_decrypt(ccm_soft_data_t * p_data)
 {
-#if CCM_DEBUG_MODE_ENABLED
-    __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_decrypt: IN",  p_data->p_m, p_data->m_len);
-#endif
-    // NRF_MESH_ASSERT_DEBUG(p_data->mic_len <= CCM_MIC_LENGTH_MAX);
-
     aes_data_t aes_data;
 
     memcpy(aes_data.key, p_data->p_key, CCM_BLOCK_SIZE);
@@ -273,29 +169,4 @@ void ccm_soft_decrypt(ccm_soft_data_t * p_data, bool * p_mic_passed)
         build_a_block(p_data->p_nonce, aes_data.cleartext, 0);
         ccm_soft_crypt(p_data, &aes_data);
     }
-
-//     const uint8_t * p_m = p_data->p_m;
-//     p_data->p_m = p_data->p_out;
-
-//     /* Authenticate data */
-//     uint8_t mic_out[CCM_MIC_LENGTH_MAX];
-
-//     ccm_soft_authenticate(p_data, &aes_data, mic_out);
-//     build_mic(p_data, &aes_data, mic_out, mic_out);
-
-//     p_data->p_m = p_m;
-// #if CCM_DEBUG_MODE_ENABLED
-//     __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_decrypt: OUT", p_data->p_out, p_data->m_len);
-//     __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_decrypt: MIC", mic_out, p_data->mic_len);
-// #endif
-
-//     *p_mic_passed = memcmp(mic_out, p_data->p_mic, p_data->mic_len) == 0;
-// #if CCM_DEBUG_MODE_ENABLED
-//     if (!*p_mic_passed)
-//     {
-//         /* No MIC match. */
-//         __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_decrypt: mic_in", p_data->p_mic, p_data->mic_len);
-//         __LOG_XB(LOG_SRC_CCM, LOG_LEVEL_INFO, "ccm_soft_decrypt: mic_out", mic_out, p_data->mic_len);
-//     }
-// #endif
 }

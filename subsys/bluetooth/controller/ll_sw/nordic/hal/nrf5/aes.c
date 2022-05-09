@@ -39,7 +39,6 @@
 
 #include <hal/nrf_ecb.h>
 
-#if !AES_USE_SOFTDEVICE_ECB_WRAPPER
 void aes_encrypt(aes_data_t * p_aes_data)
 {
     NRF_ECB->ECBDATAPTR = (uint32_t) p_aes_data;
@@ -54,4 +53,3 @@ void aes_encrypt(aes_data_t * p_aes_data)
 
     NRF_ECB->EVENTS_ENDECB = 0;
 }
-#endif

@@ -34,8 +34,8 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef CCM_SOFT_H__
-#define CCM_SOFT_H__
+#ifndef CCM_MODE2_SOFT_H__
+#define CCM_MODE2_SOFT_H__
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -57,9 +57,6 @@
 /** Length of nonce. */
 #define CCM_NONCE_LENGTH (13)
 
-/** Longest MIC allowed. */
-#define CCM_MIC_LENGTH_MAX  (16)
-
 /**
  * Struct for passing AES-CCM encryption data.
  *
@@ -72,11 +69,7 @@ typedef struct
     const uint8_t * p_m;                    /**< Message to authenticate and encrypt/decrypt. Set
                                              *   to NULL to skip decryption stage. */
     uint16_t  m_len;                        /**< Message size (in octets). */
-    const uint8_t * p_a;                    /**< Additional authenticated data. */
-    uint16_t a_len;                         /**< Additional data size (in octets). */
     uint8_t * p_out;                        /**< (Out) Encrypted/decrypted output. */
-    uint8_t * p_mic;                        /**< (Out) Message Integrety Check value */
-    uint8_t   mic_len;                      /**< Length of the message integrity check value. */
 } ccm_soft_data_t;
 
 /**
@@ -85,16 +78,15 @@ typedef struct
  * @param p_data Structure with the needed parameters to encrypt the cleartext
  *               message. See @ref ccm_soft_data_t.
  */
-void ccm_soft_encrypt(ccm_soft_data_t * p_data);
+void ccm_mode2_soft_encrypt(ccm_soft_data_t * p_data);
 
 /**
  * Decrypts data using the AES-CCM algorithm.
  *
  * @param p_data       Pointer to structure with parameters for decrypting a message.
  *                     See @ref ccm_soft_data_t.
- * @param p_mic_passed Pointer to bool for storing result of MIC
  */
-void ccm_soft_decrypt(ccm_soft_data_t * p_data, bool * p_mic_passed);
+void ccm_mode2_soft_decrypt(ccm_soft_data_t * p_data);
 
 /**
  * @}
