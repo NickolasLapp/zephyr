@@ -37,8 +37,6 @@
 #include "lll_tim_internal.h"
 #include "lll_prof_internal.h"
 
-#include "hal/nrf5/ccm_mode2_soft.h"
-
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
 #define LOG_MODULE_NAME bt_ctlr_lll_conn
 #include "common/log.h"
@@ -983,39 +981,6 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 					 */
 					struct pdu_data *scratch_pkt =
 						radio_pkt_scratch_get();
-
-					static uint8_t decrypted_data[64];
-					uint8_t nonce[CCM_NONCE_LENGTH];
-					ccm_soft_data_t ccm_params;
-					//ccm_params.p_nonce = nonce;
-					ccm_params.p_m = scratch_pkt->lldata;
-					ccm_params.m_len = scratch_pkt->len;
-					ccm_params.p_out = decrypted_data;
-					ccm_params.p_key = lll->ccm_rx.key;
-					uint16_t event_counter = lll->event_counter - 1;
-					nonce[0] = (uint8_t)event_counter;
-					nonce[1] = (uint8_t)(event_counter >> 8);
-					nonce[2] = 0;
-					nonce[3] = 0;
-					nonce[4] = 0;
-					// nonce[0] = (uint8_t)lll->ccm_rx.counter;
-					// nonce[1] = (uint8_t)(lll->ccm_rx.counter >> 8);
-					// nonce[2] = (uint8_t)(lll->ccm_rx.counter >> 16);
-					// nonce[3] = (uint8_t)(lll->ccm_rx.counter >> 24);
-					// nonce[4] = (uint8_t)(lll->ccm_rx.counter >> 32);
-					// nonce[4] = nonce[4] & 0x7F;
-					nonce[4] = nonce[4] | (lll->ccm_rx.direction << 7);
-					nonce[5] = (uint8_t)lll->ccm_rx.iv[0];
-					nonce[6] = (uint8_t)lll->ccm_rx.iv[1];
-					nonce[7] = (uint8_t)lll->ccm_rx.iv[2];
-					nonce[8] = (uint8_t)lll->ccm_rx.iv[3];
-					nonce[9] = (uint8_t)lll->ccm_rx.iv[4];
-					nonce[10] = (uint8_t)lll->ccm_rx.iv[5];
-					nonce[11] = (uint8_t)lll->ccm_rx.iv[6];
-					nonce[12] = (uint8_t)lll->ccm_rx.iv[7];
-					ccm_params.p_nonce = nonce;
-
-					ccm_mode2_soft_decrypt(&ccm_params);
 
 					if (ctrl_pdu_len_check(
 						scratch_pkt->len)) {
