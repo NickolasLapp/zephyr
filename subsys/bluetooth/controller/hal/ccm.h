@@ -12,3 +12,13 @@ struct ccm {
 	uint8_t  resv1:7;
 	uint8_t  iv[8];
 } __packed;
+
+// Whisper added for MFI
+struct __attribute__ ((packed, aligned(1))) ccm_mode2_nonce {
+	uint16_t counter;
+	uint8_t  resv1;
+	uint8_t  resv2;
+	uint8_t  resv3:7;
+	uint8_t  direction:1;
+	uint8_t  iv[8];
+};

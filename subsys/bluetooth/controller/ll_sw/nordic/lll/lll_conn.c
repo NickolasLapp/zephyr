@@ -42,6 +42,9 @@
 #include "common/log.h"
 #include "hal/debug.h"
 
+// Whisper added for MFI
+#include "hal/nrf5/ccm_mode2_soft.h"
+
 static int init_reset(void);
 static void isr_done(void *param);
 static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
@@ -969,6 +972,37 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 				LL_ASSERT(done);
 
 				bool mic_failure = !radio_ccm_mic_is_valid();
+
+				// Whisper added for MFI
+				if (lll->mode2_rx_enabled) {
+					// decrypt apple's mode 2 encryption packet via a soft decrypt routine
+					// first get the encrypted packet
+					struct pdu_data *scratch_pkt = radio_pkt_scratch_get();
+
+					// next set up the structure for the soft decryption. NOTE: The event counter
+					// has already been incremented elsewhere in the stack prior to this code running
+					// so the event_counter we actually want is (event_counter - 1)
+					ccm_soft_data_t ccm_params;
+					lll->ccm_mode2_nonce_rx.counter = lll->event_counter - 1;
+					ccm_params.p_nonce = (uint8_t *)&lll->ccm_mode2_nonce_rx;
+					ccm_params.p_m = scratch_pkt->lldata;
+					ccm_params.m_len = scratch_pkt->len;
+					ccm_params.p_out = pdu_data_rx->lldata;
+					ccm_params.p_key = lll->ccm_rx.key;
+
+					ccm_mode2_soft_decrypt(&ccm_params);
+
+					// finally finish setting up pdu_data_rx
+					pdu_data_rx->ll_id = scratch_pkt->ll_id;
+					pdu_data_rx->nesn = scratch_pkt->nesn;
+					pdu_data_rx->sn = scratch_pkt->sn;
+					pdu_data_rx->md = scratch_pkt->md;
+					pdu_data_rx->rfu = scratch_pkt->rfu;
+					pdu_data_rx->len = scratch_pkt->len;
+
+					// there's no MIC with mode 2 encryption so set this to false
+					mic_failure = false;
+				}
 
 				if (mic_failure &&
 				    lll->ccm_rx.counter == 0 &&

@@ -3584,6 +3584,19 @@ static inline void event_enc_prep(struct ll_conn *conn)
 			 */
 			lll->enc_rx = 1U;
 
+			// Whisper added for MFI
+			if(lll->has_paused) {
+				lll->mode2_rx_enabled = 1;
+				
+				// set up the Rx nonce
+				lll->ccm_mode2_nonce_rx.counter = lll->event_counter;
+				lll->ccm_mode2_nonce_rx.resv1 = 0;
+				lll->ccm_mode2_nonce_rx.resv2 = 0;
+				lll->ccm_mode2_nonce_rx.resv3 = 0;
+				lll->ccm_mode2_nonce_rx.direction = lll->ccm_rx.direction;
+				memcpy(lll->ccm_mode2_nonce_rx.iv, lll->ccm_rx.iv, sizeof(lll->ccm_mode2_nonce_rx.iv));
+			}
+
 			/* prepare the start enc req */
 			pdu_ctrl_tx->ll_id = PDU_DATA_LLID_CTRL;
 			pdu_ctrl_tx->len = offsetof(struct pdu_data_llctrl,
@@ -4957,6 +4970,19 @@ static int start_enc_rsp_send(struct ll_conn *conn,
 
 	/* enable transmit encryption */
 	conn->lll.enc_tx = 1;
+	
+	// Whisper added for MFI
+	if(conn->lll.has_paused) {
+		conn->lll.mode2_tx_enabled = 1;
+
+		// set up the Tx nonce
+		conn->lll.ccm_mode2_nonce_tx.counter = conn->lll.event_counter;
+		conn->lll.ccm_mode2_nonce_tx.resv1 = 0;
+		conn->lll.ccm_mode2_nonce_tx.resv2 = 0;
+		conn->lll.ccm_mode2_nonce_tx.resv3 = 0;
+		conn->lll.ccm_mode2_nonce_tx.direction = conn->lll.ccm_tx.direction;
+		memcpy(conn->lll.ccm_mode2_nonce_tx.iv, conn->lll.ccm_tx.iv, sizeof(conn->lll.ccm_mode2_nonce_tx.iv));
+	}
 
 	ull_pdu_data_init(pdu_ctrl_tx);
 
@@ -6361,6 +6387,9 @@ static inline void ctrl_tx_ack(struct ll_conn *conn, struct node_tx **tx,
 		{
 			/* pause data packet tx */
 			conn->llcp_enc.pause_tx = 1U;
+
+			// Whisper added for MFI:
+			conn->lll.has_paused = 1U;
 		}
 		break;
 

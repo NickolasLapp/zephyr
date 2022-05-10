@@ -130,6 +130,13 @@ struct lll_conn {
 
 	struct ccm ccm_rx;
 	struct ccm ccm_tx;
+
+	// Whisper added for MFI
+	struct  ccm_mode2_nonce ccm_mode2_nonce_rx;
+	struct  ccm_mode2_nonce ccm_mode2_nonce_tx;
+	uint8_t mode2_rx_enabled;
+	uint8_t mode2_tx_enabled;
+	uint8_t has_paused;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 
 #if defined(CONFIG_BT_CTLR_CONN_RSSI)

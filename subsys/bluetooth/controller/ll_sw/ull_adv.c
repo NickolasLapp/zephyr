@@ -1081,6 +1081,11 @@ uint8_t ll_adv_enable(uint8_t enable)
 		conn->llcp_enc.pause_tx = conn->llcp_enc.pause_rx = 0U;
 		conn->llcp_enc.refresh = 0U;
 		conn->periph.llcp_type = 0U;
+
+		// Whisper added for MFI
+		conn_lll->mode2_rx_enabled = 0;
+		conn_lll->mode2_tx_enabled = 0;
+		conn_lll->has_paused = 0;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 
 #if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
