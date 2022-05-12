@@ -694,13 +694,34 @@ void lll_conn_tx_pkt_set(struct lll_conn *lll, struct pdu_data *pdu_data_tx)
 
 	if (0) {
 #if defined(CONFIG_BT_CTLR_LE_ENC)
-	} else if (lll->enc_tx) {
+	// Whisper added for MFI: Check to make sure mode2 not enabled
+	} else if (lll->enc_tx && !lll->mode2_tx_enabled) {
 		radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT, (max_tx_octets + PDU_MIC_SIZE),
 				    pkt_flags);
 
 		radio_pkt_tx_set(radio_ccm_tx_pkt_set(&lll->ccm_tx, pdu_data_tx));
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 	} else {
+		// Whisper added for MFI.
+#if defined(CONFIG_BT_CTLR_LE_ENC)
+		if(lll->mode2_tx_enabled) {
+			// if mode 2 is enabled we need to encrypt the packet using mode 2
+			// encryption before transmitting
+			ccm_soft_data_t ccm_params;
+
+			// Note that the event counter is already incremented before this code is called
+			// so the event counter we want is actually (event_counter - 1)
+			lll->ccm_mode2_nonce_tx.counter = lll->event_counter - 1;
+			ccm_params.p_nonce = (uint8_t *)&lll->ccm_mode2_nonce_tx;
+			ccm_params.p_m = pdu_data_tx->lldata;
+			ccm_params.m_len = pdu_data_tx->len;
+			ccm_params.p_out = pdu_data_tx->lldata;
+			ccm_params.p_key = lll->ccm_tx.key;
+
+			ccm_mode2_soft_encrypt(&ccm_params);
+		}
+#endif /* CONFIG_BT_CTLR_LE_ENC */
+
 		radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT, max_tx_octets, pkt_flags);
 
 		radio_pkt_tx_set(pdu_data_tx);
