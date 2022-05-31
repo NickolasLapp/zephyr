@@ -846,9 +846,13 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 			ret = lfs_to_errno(ret);
 			goto out;
 		}
-	}
+    } else if (ret < 0) {
+        LOG_WRN("can't mount (LFS %d); formatting is disabled", ret);
+        ret = lfs_to_errno(ret);
+        goto out;
+    }
 
-	LOG_INF("%s mounted", log_strdup(mountp->mnt_point));
+    LOG_INF("%s mounted", log_strdup(mountp->mnt_point));
 
 out:
 	if (ret < 0) {
