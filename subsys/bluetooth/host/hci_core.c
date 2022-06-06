@@ -1484,8 +1484,10 @@ bool bt_le_conn_params_valid(const struct bt_le_conn_param *param)
 {
 	/* All limits according to BT Core spec 5.0 [Vol 2, Part E, 7.8.12] */
 
+	// *** Whisper changed for MFI.  Previous minimum interval was 6 (7.5ms) but
+	// this needed to be modified to allow for intervals of 4 (5ms) for MFI streaming
 	if (param->interval_min > param->interval_max ||
-	    param->interval_min < 6 || param->interval_max > 3200) {
+	    param->interval_min < 4 || param->interval_max > 3200) {
 		return false;
 	}
 
