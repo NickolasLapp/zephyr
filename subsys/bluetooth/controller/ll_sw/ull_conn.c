@@ -42,6 +42,7 @@
 #include "ull_conn_types.h"
 #include "ull_conn_iso_types.h"
 #include "ull_internal.h"
+#include "ull_mfi_audio_internal.h"
 #include "ull_sched_internal.h"
 #include "ull_chan_internal.h"
 #include "ull_conn_internal.h"
@@ -997,6 +998,12 @@ void ull_conn_setup(memq_link_t *rx_link, struct node_rx_hdr *rx)
 	}
 }
 
+// *** Whisper added for MFI
+static mfi_audio_recv_cb_fn ull_mfi_audio_cb = NULL;
+void ull_mfi_audio_register_cb(mfi_audio_recv_cb_fn mfi_audio_cb) {
+	ull_mfi_audio_cb = mfi_audio_cb;
+}
+
 int ull_conn_rx(memq_link_t *link, struct node_rx_pdu **rx)
 {
 	struct pdu_data *pdu_rx;
@@ -1050,6 +1057,13 @@ int ull_conn_rx(memq_link_t *link, struct node_rx_pdu **rx)
 		break;
 
 	case PDU_DATA_LLID_RESV:
+		// *** Whisper added for MFI.  MFI audio packets come in with the reserved
+		// LLID.  When we see these packets, pass the payload on to the mfi audio callback
+		// if the callback exists
+		if(ull_mfi_audio_cb) {
+			ull_mfi_audio_cb(pdu_rx->lldata, pdu_rx->len);
+		}
+		// fallthrough (this existed before whisper modification)
 	default:
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 #if defined(CONFIG_BT_LL_SW_LLCP_LEGACY)
