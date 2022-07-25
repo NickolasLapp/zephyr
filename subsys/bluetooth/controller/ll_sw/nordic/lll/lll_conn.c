@@ -32,6 +32,7 @@
 #include "lll_df.h"
 #include "lll_conn.h"
 
+#include "lll_mfi_audio_internal.h"
 #include "lll_internal.h"
 #include "lll_df_internal.h"
 #include "lll_tim_internal.h"
@@ -105,6 +106,16 @@ static uint8_t force_md_cnt;
 #define FORCE_MD_CNT_GET() 0
 #define FORCE_MD_CNT_SET()
 #endif /* !CONFIG_BT_CTLR_FORCE_MD_COUNT */
+
+// *** Whisper added for MFI
+static mfi_audio_sync_assert_cb_fn lll_mfi_audio_sync_assert_cb = NULL;
+static mfi_audio_sync_deassert_cb_fn lll_mfi_audio_sync_deassert_cb = NULL;
+void lll_mfi_audio_sync_register_cb(mfi_audio_sync_assert_cb_fn mfi_audio_sync_assert_cb,
+                               mfi_audio_sync_deassert_cb_fn mfi_audio_sync_deassert_cb)
+{
+  lll_mfi_audio_sync_assert_cb = mfi_audio_sync_assert_cb;
+  lll_mfi_audio_sync_deassert_cb = mfi_audio_sync_deassert_cb;
+}
 
 int lll_conn_init(void)
 {
@@ -1011,6 +1022,14 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 
 				// Whisper added for MFI
 				if (lll->mode2_rx_enabled) {
+					// if this is an audio packet and the primary transmit slot, assert the sync signal
+					// for the ezairo
+					if((pdu_data_rx->ll_id == PDU_DATA_LLID_RESV) && 
+					   (pdu_data_rx->sn == 0) && 
+					    lll_mfi_audio_sync_assert_cb) {
+						lll_mfi_audio_sync_assert_cb();
+					}
+
 					// decrypt apple's mode 2 encryption packet via a soft decrypt routine
 					// first get the encrypted packet
 					struct pdu_data *scratch_pkt = radio_pkt_scratch_get();
@@ -1038,6 +1057,14 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 
 					// there's no MIC with mode 2 encryption so set this to false
 					mic_failure = false;
+					
+					// if this is an audio packet and the primary transmit slot, deassert the sync signal
+					// for the ezairo
+					if((pdu_data_rx->ll_id == PDU_DATA_LLID_RESV) && 
+					   (pdu_data_rx->sn == 0) && 
+					    lll_mfi_audio_sync_deassert_cb) {
+						lll_mfi_audio_sync_deassert_cb();
+					}
 				}
 
 				if (mic_failure &&
