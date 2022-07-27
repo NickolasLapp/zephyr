@@ -1060,8 +1060,14 @@ int ull_conn_rx(memq_link_t *link, struct node_rx_pdu **rx)
 		// *** Whisper added for MFI.  MFI audio packets come in with the reserved
 		// LLID.  When we see these packets, pass the payload on to the mfi audio callback
 		// if the callback exists
-		if(ull_mfi_audio_cb) {
-			ull_mfi_audio_cb(pdu_rx->lldata, pdu_rx->len);
+		if (ull_mfi_audio_cb) {
+			mfi_audio_slot_type_t slot_type;
+			if(pdu_rx->sn == 0) {
+				slot_type = MFI_AUDIO_SLOT_TYPE_PRIMARY;
+			} else {
+				slot_type = MFI_AUDIO_SLOT_TYPE_RETRANSMIT;
+			}
+			ull_mfi_audio_cb(pdu_rx->lldata, pdu_rx->len, slot_type);
 		}
 		// fallthrough (this existed before whisper modification)
 	default:
