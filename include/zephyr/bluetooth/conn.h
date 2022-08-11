@@ -1492,6 +1492,11 @@ struct bt_conn *bt_conn_create_br(const bt_addr_t *peer,
  */
 struct bt_conn *bt_conn_create_sco(const bt_addr_t *peer);
 
+// *** Whisper added for MFI. Register a callback for when audio packets are
+// received so the BLE stack knows where to pass them
+typedef void (*hci_mfi_audio_recv_cb_fn)(const uint8_t *data, uint8_t data_len);
+void bt_conn_mfi_audio_register_cb(hci_mfi_audio_recv_cb_fn mfi_audio_cb);
+
 #ifdef __cplusplus
 }
 #endif

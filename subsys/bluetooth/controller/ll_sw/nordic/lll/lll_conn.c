@@ -1060,10 +1060,15 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 					
 					// if this is an audio packet and the primary transmit slot, deassert the sync signal
 					// for the ezairo
-					if((pdu_data_rx->ll_id == PDU_DATA_LLID_RESV) && 
-					   (pdu_data_rx->sn == 0) && 
-					    lll_mfi_audio_sync_deassert_cb) {
-						lll_mfi_audio_sync_deassert_cb();
+					if(pdu_data_rx->ll_id == PDU_DATA_LLID_RESV) {
+						// at the end of the packet, append the transmit slot type
+						pdu_data_rx->lldata[pdu_data_rx->len] = pdu_data_rx->sn;
+						pdu_data_rx->len = pdu_data_rx->len + 1;
+
+						// if this is the primary transmit slot, de-assert the sync signal for the ezairo
+						if((pdu_data_rx->sn == 0) && lll_mfi_audio_sync_deassert_cb) {
+							lll_mfi_audio_sync_deassert_cb();
+						}
 					}
 				}
 

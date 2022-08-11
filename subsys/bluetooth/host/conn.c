@@ -236,6 +236,12 @@ void bt_conn_reset_rx_state(struct bt_conn *conn)
 	conn->rx = NULL;
 }
 
+// *** Whisper added for MFI
+static hci_mfi_audio_recv_cb_fn bt_conn_mfi_audio_cb = NULL;
+void bt_conn_mfi_audio_register_cb(hci_mfi_audio_recv_cb_fn mfi_audio_cb) {
+	bt_conn_mfi_audio_cb = mfi_audio_cb;
+}
+
 static void bt_acl_recv(struct bt_conn *conn, struct net_buf *buf,
 			uint8_t flags)
 {
@@ -285,6 +291,17 @@ static void bt_acl_recv(struct bt_conn *conn, struct net_buf *buf,
 		net_buf_add_mem(conn->rx, buf->data, buf->len);
 		net_buf_unref(buf);
 		break;
+	// *** Whisper added for MFI.  BT_ACL_COMPLETE is a packet boundary flag of '11' which
+	// is how apple recommends transferring audio data over HCI.  this packet boundary flag
+	// is normally unused here
+	case BT_ACL_COMPLETE:
+		if(bt_conn_mfi_audio_cb) {
+			bt_conn_mfi_audio_cb(buf->data, buf->len);
+		}		
+		bt_conn_reset_rx_state(conn);
+		net_buf_unref(buf);
+		return;
+
 	default:
 		/* BT_ACL_START_NO_FLUSH and BT_ACL_COMPLETE are not allowed on
 		 * LE-U from Controller to Host.

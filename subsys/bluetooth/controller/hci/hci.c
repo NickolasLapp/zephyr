@@ -7946,9 +7946,14 @@ void hci_acl_encode(struct node_rx_pdu *node_rx, struct net_buf *buf)
 	switch (pdu_data->ll_id) {
 	case PDU_DATA_LLID_DATA_CONTINUE:
 	case PDU_DATA_LLID_DATA_START:
+	case PDU_DATA_LLID_RESV:
 		acl = (void *)net_buf_add(buf, sizeof(*acl));
 		if (pdu_data->ll_id == PDU_DATA_LLID_DATA_START) {
 			handle_flags = bt_acl_handle_pack(handle, BT_ACL_START);
+		} else if (pdu_data->ll_id == PDU_DATA_LLID_RESV) {
+			// MFI audio packets get sent over HCI with the packet boundary
+			// flag set to '11' which is normally unused
+			handle_flags = bt_acl_handle_pack(handle, BT_ACL_COMPLETE);
 		} else {
 			handle_flags = bt_acl_handle_pack(handle, BT_ACL_CONT);
 		}
