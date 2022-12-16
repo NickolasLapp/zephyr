@@ -719,7 +719,7 @@ static int spi_nor_write_protection_set(const struct device *dev,
 	return ret;
 }
 
-#if defined(CONFIG_FLASH_JESD216_API) || defined(CONFIG_SPI_NOR_SFDP_RUNTIME)
+#if defined(CONFIG_FLASH_JESD216_API)
 
 static int spi_nor_sfdp_read(const struct device *dev, off_t addr,
 			     void *dest, size_t size)
@@ -880,7 +880,7 @@ static int spi_nor_process_sfdp(const struct device *dev)
 	} u;
 	const struct jesd216_sfdp_header *hp = &u.sfdp;
 
-	rc = spi_nor_sfdp_read(dev, 0, u.raw, sizeof(u.raw));
+	rc = read_sfdp(dev, 0, u.raw, sizeof(u.raw));
 	if (rc != 0) {
 		LOG_ERR("SFDP read failed: %d", rc);
 		return rc;
@@ -913,7 +913,7 @@ static int spi_nor_process_sfdp(const struct device *dev)
 			} u;
 			const struct jesd216_bfp *bfp = &u.bfp;
 
-			rc = spi_nor_sfdp_read(dev, jesd216_param_addr(php), u.dw, sizeof(u.dw));
+			rc = read_sfdp(dev, jesd216_param_addr(php), u.dw, sizeof(u.dw));
 			if (rc == 0) {
 				rc = spi_nor_process_bfp(dev, php, bfp);
 			}
